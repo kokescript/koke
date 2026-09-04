@@ -5,12 +5,12 @@ const fs = require('fs');
 const path = require('path');
 
 // ----------------------------------------------------------------
-const BOT_TOKEN = 'MTU0NDcwMTU2NTI2NzYwNzYxMg.GP0nBA.V2rA6LImVGGSe-V36oJcgeATZc2JKTd-pnSY7s';
-const CLIENT_ID = '1544701565267607612';
-const CLIENT_SECRET = 'NjepGjPj70odGJh31Saw6Qc1PPM72uf0';
-const REDIRECT_URI = 'https://bot11036-0x8le.puratya.com/callback';
-const ROLE_ID = '1490860160913244171';
-const BACKUP_SERVER_ID = '1544988071794188369';
+const BOT_TOKEN = process.env.BOT_TOKEN;
+const CLIENT_ID = process.env.CLIENT_ID;
+const CLIENT_SECRET = process.env.CLIENT_SECRET;
+const REDIRECT_URI = process.env.REDIRECT_URI;
+const ROLE_ID = process.env.ROLE_ID;
+const BACKUP_SERVER_ID = process.env.BACKUP_SERVER_ID;
 const TOKENS_FILE = path.join(__dirname, 'tokens.json');
 const PENDING_FILE = path.join(__dirname, 'pending.json');
 // ----------------------------------------------------------------
