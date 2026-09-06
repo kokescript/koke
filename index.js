@@ -1,11 +1,11 @@
 // ============================================================
-// Discord ロールパネル & 認証 & ギブウェイボット
+// Discord ロールパネル & 認証ボット
 // ============================================================
 
 const {
   Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder,
   StringSelectMenuBuilder, ButtonBuilder, ButtonStyle, 
-  PermissionFlagsBits, ChannelType
+  PermissionFlagsBits
 } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
@@ -13,19 +13,11 @@ const path = require('path');
 // ============================================================
 // 設定
 // ============================================================
-// トークンはハードコードせず、ホスティングパネルの「環境変数」機能
-// (Environment Variables / Variables など) に DISCORD_TOKEN という
-// 名前で登録してください。ローカルで動かす場合は .env + dotenv を使います。
 const CONFIG = {
-  TOKEN: process.env.DISCORD_TOKEN,
+  TOKEN: 'MTU0NDcwMTU2NTI2NzYwNzYxMg.GrJEJE.dtBaZtw-f8TPmnV4xX_GXhIQVWOvszWLh_sgls',
   DEFAULT_COLOR: '#00FFFF',
   MAX_ROLES_PER_PANEL: 25,
 };
-
-if (!CONFIG.TOKEN) {
-  console.error('❌ DISCORD_TOKEN が設定されていません。ホスティングパネルの環境変数設定を確認してください。');
-  process.exit(1);
-}
 
 // ============================================================
 // データ管理
@@ -35,21 +27,14 @@ const DATA_FILE = path.join(__dirname, 'data.json');
 function loadData() {
   try {
     if (!fs.existsSync(DATA_FILE)) {
-      const d = { panels: {}, counter: 0, giveaways: {} };
+      const d = { panels: {}, counter: 0 };
       fs.writeFileSync(DATA_FILE, JSON.stringify(d, null, 2));
       return d;
     }
-    const data = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
-    
-    if (!data.giveaways) data.giveaways = {};
-    if (!data.panels) data.panels = {};
-    if (!data.counter) data.counter = 0;
-    
-    fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
-    return data;
+    return JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
   } catch (e) {
     console.error('❌ データファイル読み込みエラー:', e);
-    return { panels: {}, counter: 0, giveaways: {} };
+    return { panels: {}, counter: 0 };
   }
 }
 
@@ -77,24 +62,6 @@ function extractRoleIds(input) {
   return Array.from(ids);
 }
 
-function parseDuration(input) {
-  const match = input.toLowerCase().match(/^(\d+)([smhdw])$/);
-  if (!match) return null;
-  
-  const value = parseInt(match[1]);
-  const unit = match[2];
-  
-  const multipliers = {
-    's': 1000,
-    'm': 60 * 1000,
-    'h': 60 * 60 * 1000,
-    'd': 24 * 60 * 60 * 1000,
-    'w': 7 * 24 * 60 * 60 * 1000,
-  };
-  
-  return value * multipliers[unit];
-}
-
 // ============================================================
 // ボット初期化
 // ============================================================
@@ -112,6 +79,7 @@ client.once('ready', async () => {
   console.log(`✅ ${client.user.tag} としてログインしました！`);
   console.log('-----------------------------------');
 
+  // コマンド登録
   try {
     await client.application.commands.set([
       {
@@ -142,38 +110,6 @@ client.once('ready', async () => {
           },
         ],
       },
-      {
-        name: 'giveaway',
-        description: '【管理者専用】ギブウェイを開始します',
-        options: [
-          { name: 'prize', description: '景品名', type: 3, required: true },
-          { name: 'description', description: '説明文 (\\nで改行)', type: 3, required: true },
-          { name: 'winners', description: '当選人数（1〜10人）', type: 4, required: true },
-          { 
-            name: 'duration', 
-            description: '期間（例: 30m, 1h, 1d, 1w）', 
-            type: 3, 
-            required: true 
-          },
-          {
-            name: 'boost_roles',
-            description: 'ブースト対象のロール（メンションかID、複数指定可）',
-            type: 3,
-            required: false,
-          },
-          {
-            name: 'boost_multiplier',
-            description: 'ブースト倍率（2倍、3倍など）',
-            type: 4,
-            required: false,
-          },
-        ],
-      },
-      {
-        name: 'nuke',
-        description: '【管理者専用】チャンネルを複製してリセットします',
-        options: [],
-      },
     ]);
     
     console.log('✅ コマンドを登録しました。');
@@ -202,6 +138,7 @@ client.on('interactionCreate', async (interaction) => {
     // スラッシュコマンド処理
     // ============================================================
     if (interaction.isChatInputCommand()) {
+      // 権限チェック
       if (!hasAdminPermission(interaction.member)) {
         return interaction.reply({ 
           content: '❌ このコマンドを実行するには「ロールの管理」権限が必要です！', 
@@ -209,7 +146,9 @@ client.on('interactionCreate', async (interaction) => {
         });
       }
 
-      // /rolepanel
+      // ============================================================
+      // /rolepanel コマンド
+      // ============================================================
       if (interaction.commandName === 'rolepanel') {
         const title = interaction.options.getString('title');
         const description = interaction.options.getString('description').replace(/\\n/g, '\n');
@@ -218,13 +157,13 @@ client.on('interactionCreate', async (interaction) => {
         const roleIds = extractRoleIds(rolesInput);
         if (roleIds.length === 0) {
           return interaction.reply({ 
-            content: '❌ 有効なロールが見つかりませんでした。', 
+            content: '❌ 有効なロールが見つかりませんでした。ロールをメンション（@ロール名）かIDで指定してください。', 
             ephemeral: true 
           });
         }
         if (roleIds.length > CONFIG.MAX_ROLES_PER_PANEL) {
           return interaction.reply({ 
-            content: `❌ 最大${CONFIG.MAX_ROLES_PER_PANEL}個までです。`, 
+            content: `❌ プルダウンに設定できるロールは最大${CONFIG.MAX_ROLES_PER_PANEL}個までです。`, 
             ephemeral: true 
           });
         }
@@ -253,7 +192,7 @@ client.on('interactionCreate', async (interaction) => {
 
         if (roles.length === 0) {
           return interaction.editReply({ 
-            content: '❌ 有効なロールがありません。' 
+            content: '❌ 指定されたロールはすべて無効か、BOTより上位のため設定できませんでした。' 
           });
         }
 
@@ -291,17 +230,19 @@ client.on('interactionCreate', async (interaction) => {
 
         let warning = '';
         if (invalidRoles.length > 0) 
-          warning += `\n⚠️ スキップ: ${invalidRoles.join(', ')}`;
+          warning += `\n⚠️ 無効なロールをスキップ: ${invalidRoles.join(', ')}`;
         if (tooHighRoles.length > 0) 
-          warning += `\n⚠️ BOTより上位: ${tooHighRoles.join(', ')}`;
+          warning += `\n⚠️ BOTより上位のためスキップ: ${tooHighRoles.join(', ')}`;
 
         await interaction.editReply({ 
-          content: `✅ 設置しました！(${roles.length}個)${warning}` 
+          content: `✅ ロールパネルを設置しました！(${roles.length}個のロール)${warning}` 
         });
         return;
       }
 
-      // /verify
+      // ============================================================
+      // /verify コマンド
+      // ============================================================
       if (interaction.commandName === 'verify') {
         const title = interaction.options.getString('title');
         const description = interaction.options.getString('description').replace(/\\n/g, '\n');
@@ -310,7 +251,7 @@ client.on('interactionCreate', async (interaction) => {
         const roleIds = extractRoleIds(rolesInput);
         if (roleIds.length === 0) {
           return interaction.reply({ 
-            content: '❌ 有効なロールが見つかりませんでした。', 
+            content: '❌ 有効なロールが見つかりませんでした。ロールをメンション（@ロール名）かIDで指定してください。', 
             ephemeral: true 
           });
         }
@@ -339,7 +280,7 @@ client.on('interactionCreate', async (interaction) => {
 
         if (roles.length === 0) {
           return interaction.editReply({ 
-            content: '❌ 有効なロールがありません。' 
+            content: '❌ 指定されたロールはすべて無効か、BOTより上位のため設定できませんでした。' 
           });
         }
 
@@ -370,229 +311,15 @@ client.on('interactionCreate', async (interaction) => {
         };
         saveData(data);
 
-        await interaction.editReply({ 
-          content: `✅ 認証パネルを設置しました！(ロール: ${roles.map(r => r.name).join(', ')})` 
-        });
-        return;
-      }
-
-      // /giveaway
-      if (interaction.commandName === 'giveaway') {
-        const prize = interaction.options.getString('prize');
-        const description = interaction.options.getString('description').replace(/\\n/g, '\n');
-        const winners = interaction.options.getInteger('winners');
-        const durationInput = interaction.options.getString('duration');
-        const boostRolesInput = interaction.options.getString('boost_roles') || '';
-        const boostMultiplier = interaction.options.getInteger('boost_multiplier') || 1;
-
-        if (winners < 1 || winners > 10) {
-          return interaction.reply({ 
-            content: '❌ 当選人数は1〜10人です。', 
-            ephemeral: true 
-          });
-        }
-
-        const durationMs = parseDuration(durationInput);
-        if (!durationMs) {
-          return interaction.reply({ 
-            content: '❌ 期間形式: 30m, 1h, 1d, 1w', 
-            ephemeral: true 
-          });
-        }
-
-        await interaction.deferReply({ ephemeral: true });
-
-        const boostRoleIds = boostRolesInput ? extractRoleIds(boostRolesInput) : [];
-        const boostRoles = [];
-        
-        for (const id of boostRoleIds) {
-          const role = interaction.guild.roles.cache.get(id);
-          if (role) boostRoles.push(role);
-        }
-
-        const data = loadData();
-        const giveawayId = `gw_${Date.now()}`;
-        const endTime = Date.now() + durationMs;
-        
-        const embed = new EmbedBuilder()
-          .setColor('#0000FF')
-          .setTitle(`🎉 ${prize}`)
-          .setDescription(description || ' ')
-          .addFields(
-            { name: '⏰ 終了まで', value: `<t:${Math.floor(endTime / 1000)}:R>`, inline: true },
-            { name: '👥 参加人数', value: '0人', inline: true },
-            { name: '🎁 当選人数', value: `${winners}人`, inline: true }
-          );
-
-        if (boostRoles.length > 0) {
-          embed.addFields({
-            name: '🚀 ブースト対象',
-            value: boostRoles.map(r => `<@&${r.id}> → ${boostMultiplier}倍`).join('\n'),
-            inline: false
-          });
-        }
-
-        const button = new ButtonBuilder()
-          .setCustomId(`giveaway_join_${giveawayId}`)
-          .setLabel('🎉 参加する')
-          .setStyle(ButtonStyle.Primary);
-
-        const row = new ActionRowBuilder().addComponents(button);
-        
-        const message = await interaction.channel.send({ 
-          embeds: [embed], 
-          components: [row] 
-        });
-
-        if (!data.giveaways) data.giveaways = {};
-
-        data.giveaways[giveawayId] = {
-          prize: prize,
-          winners: winners,
-          endTime: endTime,
-          boostRoleIds: boostRoles.map(r => r.id),
-          boostMultiplier: boostMultiplier,
-          messageId: message.id,
-          channelId: interaction.channel.id,
-          participants: [],
-          ended: false,
-        };
-        saveData(data);
+        let warning = '';
+        if (invalidRoles.length > 0) 
+          warning += `\n⚠️ 無効なロールをスキップ: ${invalidRoles.join(', ')}`;
+        if (tooHighRoles.length > 0) 
+          warning += `\n⚠️ BOTより上位のためスキップ: ${tooHighRoles.join(', ')}`;
 
         await interaction.editReply({ 
-          content: `✅ ギブウェイ開始！\n景品: ${prize}\n当選: ${winners}人\n期間: ${durationInput}` 
+          content: `✅ 認証パネルを設置しました！(ロール: ${roles.map(r => r.name).join(', ')})${warning}` 
         });
-
-        setTimeout(async () => {
-          try {
-            const currentData = loadData();
-            const giveaway = currentData.giveaways[giveawayId];
-            
-            if (!giveaway || giveaway.ended) return;
-            
-            giveaway.ended = true;
-            currentData.giveaways[giveawayId] = giveaway;
-            saveData(currentData);
-
-            const channel = await client.channels.fetch(giveaway.channelId);
-            const giveawayMessage = await channel.messages.fetch(giveaway.messageId);
-
-            const participants = giveaway.participants;
-            const winnersList = [];
-            let entries = [];
-
-            for (const userId of participants) {
-              const member = await interaction.guild.members.fetch(userId).catch(() => null);
-              if (!member) continue;
-              
-              let weight = 1;
-              for (const roleId of giveaway.boostRoleIds) {
-                if (member.roles.cache.has(roleId)) {
-                  weight = giveaway.boostMultiplier;
-                  break;
-                }
-              }
-              
-              for (let i = 0; i < weight; i++) {
-                entries.push(userId);
-              }
-            }
-
-            const uniqueParticipants = [...new Set(participants)];
-            while (winnersList.length < Math.min(giveaway.winners, uniqueParticipants.length)) {
-              const randomIndex = Math.floor(Math.random() * entries.length);
-              const winnerId = entries[randomIndex];
-              
-              if (!winnersList.includes(winnerId)) {
-                winnersList.push(winnerId);
-              }
-              
-              entries = entries.filter(id => id !== winnerId);
-              
-              if (entries.length === 0) break;
-            }
-
-            const resultEmbed = new EmbedBuilder()
-              .setColor('#FFD700')
-              .setTitle(`🎉 ${giveaway.prize} - 当選者発表！`)
-              .setDescription(
-                winnersList.length > 0 
-                  ? winnersList.map((id, index) => `${index + 1}. <@${id}>`).join('\n')
-                  : '参加者がいませんでした。'
-              )
-              .addFields(
-                { name: '👥 参加人数', value: `${uniqueParticipants.length}人`, inline: true },
-                { name: '🎁 当選人数', value: `${winnersList.length}人`, inline: true }
-              )
-              .setTimestamp();
-
-            await giveawayMessage.edit({ 
-              embeds: [resultEmbed], 
-              components: [] 
-            });
-
-            await channel.send({ 
-              content: winnersList.length > 0 
-                ? `🎉 おめでとう！ ${winnersList.map(id => `<@${id}>`).join(', ')} さんが「${giveaway.prize}」に当選！`
-                : 'ギブウェイが終了しました。'
-            });
-
-            delete currentData.giveaways[giveawayId];
-            saveData(currentData);
-
-          } catch (e) {
-            console.error('❌ ギブウェイ終了エラー:', e);
-          }
-        }, durationMs);
-
-        return;
-      }
-
-      // /nuke
-      if (interaction.commandName === 'nuke') {
-        await interaction.deferReply({ ephemeral: true });
-
-        const channel = interaction.channel;
-        
-        if (!channel || channel.type !== ChannelType.GuildText) {
-          return interaction.editReply({ 
-            content: '❌ テキストチャンネルでのみ使用できます。' 
-          });
-        }
-
-        try {
-          // チャンネルを複製
-          const newChannel = await channel.clone({
-            name: channel.name,
-            parent: channel.parent,
-            topic: channel.topic,
-            nsfw: channel.nsfw,
-            rateLimitPerUser: channel.rateLimitPerUser,
-            position: channel.position,
-            permissionOverwrites: channel.permissionOverwrites.cache,
-          });
-
-          // 古いチャンネルを削除
-          await channel.delete();
-
-          // 新しいチャンネルに通知
-          const embed = new EmbedBuilder()
-            .setColor('#FF0000')
-            .setTitle('💥 チャンネルがリセットされました')
-            .setDescription('このチャンネルはnukeコマンドによってリセットされました。')
-            .setTimestamp();
-
-          await newChannel.send({ embeds: [embed] });
-
-          await interaction.editReply({ 
-            content: `✅ チャンネルをリセットしました！\n新しいチャンネル: ${newChannel}` 
-          });
-        } catch (e) {
-          console.error('❌ nukeエラー:', e);
-          await interaction.editReply({ 
-            content: '❌ チャンネルのリセットに失敗しました。BOTの権限を確認してください。' 
-          });
-        }
         return;
       }
     }
@@ -607,7 +334,7 @@ client.on('interactionCreate', async (interaction) => {
 
       if (!panel || panel.type !== 'verify') {
         return interaction.reply({ 
-          content: '❌ 設定が見つかりません。', 
+          content: '❌ この認証パネルの設定が見つかりませんでした。', 
           ephemeral: true 
         });
       }
@@ -631,79 +358,15 @@ client.on('interactionCreate', async (interaction) => {
           .filter(Boolean);
 
         await interaction.editReply({ 
-          content: `✅ 認証完了！\n付与: ${roleNames.join(', ')}` 
+          content: `✅ 認証が完了しました！\n付与されたロール: ${roleNames.join(', ')}` 
         });
       } catch (e) {
-        console.error('❌ 認証エラー:', e);
+        console.error('❌ 認証ロール付与エラー:', e);
         await interaction.editReply({ 
-          content: '❌ ロール付与に失敗しました。' 
+          content: '❌ ロールの付与に失敗しました。BOTの権限やロールの順位を確認してください。' 
         });
       }
       return;
-    }
-
-    // ============================================================
-    // ボタン処理（ギブウェイ参加）
-    // ============================================================
-    if (interaction.isButton() && interaction.customId.startsWith('giveaway_join_')) {
-      const giveawayId = interaction.customId.replace('giveaway_join_', '');
-      const data = loadData();
-      
-      if (!data.giveaways || !data.giveaways[giveawayId]) {
-        return interaction.reply({ 
-          content: '❌ このギブウェイは終了しています。', 
-          ephemeral: true 
-        });
-      }
-      
-      const giveaway = data.giveaways[giveawayId];
-
-      if (giveaway.ended || Date.now() > giveaway.endTime) {
-        return interaction.reply({ 
-          content: '❌ このギブウェイは終了しています。', 
-          ephemeral: true 
-        });
-      }
-
-      await interaction.deferReply({ ephemeral: true });
-
-      const userId = interaction.user.id;
-
-      if (giveaway.participants.includes(userId)) {
-        giveaway.participants = giveaway.participants.filter(id => id !== userId);
-        data.giveaways[giveawayId] = giveaway;
-        saveData(data);
-
-        const updatedEmbed = EmbedBuilder.from(interaction.message.embeds[0])
-          .spliceFields(1, 1, { 
-            name: '👥 参加人数', 
-            value: `${giveaway.participants.length}人`, 
-            inline: true 
-          });
-
-        await interaction.message.edit({ embeds: [updatedEmbed] });
-
-        return interaction.editReply({ 
-          content: '✅ 参加を解除しました。' 
-        });
-      } else {
-        giveaway.participants.push(userId);
-        data.giveaways[giveawayId] = giveaway;
-        saveData(data);
-
-        const updatedEmbed = EmbedBuilder.from(interaction.message.embeds[0])
-          .spliceFields(1, 1, { 
-            name: '👥 参加人数', 
-            value: `${giveaway.participants.length}人`, 
-            inline: true 
-          });
-
-        await interaction.message.edit({ embeds: [updatedEmbed] });
-
-        return interaction.editReply({ 
-          content: '✅ 参加しました！' 
-        });
-      }
     }
 
     // ============================================================
@@ -716,7 +379,7 @@ client.on('interactionCreate', async (interaction) => {
 
       if (!panel || panel.type !== 'select') {
         return interaction.reply({ 
-          content: '❌ 設定が見つかりません。', 
+          content: '❌ このパネルの設定が見つかりませんでした。', 
           ephemeral: true 
         });
       }
@@ -741,32 +404,28 @@ client.on('interactionCreate', async (interaction) => {
           .map(id => interaction.guild.roles.cache.get(id)?.name)
           .filter(Boolean);
 
-        let content = '✅ 更新しました。';
+        let content = '✅ ロールを更新しました。';
         if (addedNames.length > 0) content += `\n➕ 付与: ${addedNames.join(', ')}`;
         if (removedNames.length > 0) content += `\n➖ 解除: ${removedNames.join(', ')}`;
         if (addedNames.length === 0 && removedNames.length === 0) 
-          content = '変更なし。';
+          content = '変更はありませんでした。';
 
         await interaction.editReply({ content });
       } catch (e) {
         console.error('❌ ロール更新エラー:', e);
         await interaction.editReply({ 
-          content: '❌ 更新に失敗しました。' 
+          content: '❌ ロールの更新に失敗しました。BOTの権限やロールの順位を確認してください。' 
         });
       }
       return;
     }
   } catch (error) {
     console.error('❌ エラー:', error);
-    try {
-      if (!interaction.replied && !interaction.deferred) {
-        await interaction.reply({ 
-          content: '❌ エラーが発生しました。', 
-          ephemeral: true 
-        });
-      }
-    } catch (e) {
-      // 応答できない場合は無視
+    if (!interaction.replied && !interaction.deferred) {
+      await interaction.reply({ 
+        content: '❌ エラーが発生しました。', 
+        ephemeral: true 
+      }).catch(() => {});
     }
   }
 });
